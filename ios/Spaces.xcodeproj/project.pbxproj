@@ -52,7 +52,7 @@
 		395FF3A06858329384027037 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		4396C54194DB2B12102F3150 /* NotesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesListView.swift; sourceTree = "<group>"; };
 		45CE53FD11E7CBBC8353BD3B /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
-		538D6D7251C1F97620453E37 /* Spaces.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Spaces.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		538D6D7251C1F97620453E37 /* Spaces.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Spaces.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5EAF34195795FFE206BC5F99 /* CaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureView.swift; sourceTree = "<group>"; };
 		600EA9099B9490A0021A6442 /* SearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchViewModel.swift; sourceTree = "<group>"; };
 		6160C8ED20487A746329ECA5 /* NoteDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteDetailView.swift; sourceTree = "<group>"; };
@@ -378,6 +378,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = V7YL497CK8;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Spaces/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -543,6 +544,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = V7YL497CK8;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Spaces/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

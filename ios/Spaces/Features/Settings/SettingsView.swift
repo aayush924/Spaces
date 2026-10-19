@@ -23,17 +23,17 @@ struct SettingsView: View {
             ZStack {
                 Theme.background.ignoresSafeArea()
 
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 24) {
-                        if settings.isConfigured {
-                            loggedInView
-                        } else {
+                if settings.isConfigured {
+                    loggedInView
+                } else {
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 24) {
                             loggedOutView
                         }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 14)
+                        .padding(.bottom, 120)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 14)
-                    .padding(.bottom, 120)
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
@@ -53,28 +53,34 @@ struct SettingsView: View {
     // MARK: - Logged In View
 
     private var loggedInView: some View {
-        VStack(alignment: .leading, spacing: 28) {
-            Button {
-                renameDraft = settings.profileName
-                showingRenamePrompt = true
-            } label: {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(settings.profileName)
-                        .font(Theme.serifTitle(38))
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(1)
-                    Image(systemName: "pencil")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Theme.textTertiary)
-                    Spacer()
+        ZStack {
+            VStack(alignment: .leading, spacing: 20) {
+                Button {
+                    renameDraft = settings.profileName
+                    showingRenamePrompt = true
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(settings.profileName)
+                            .font(Theme.serifTitle(38))
+                            .foregroundStyle(Theme.textPrimary)
+                            .lineLimit(1)
+                        Image(systemName: "pencil")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Theme.textTertiary)
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+                .buttonStyle(.plain)
 
-            if let errorMessage {
-                ErrorBanner(message: errorMessage)
+                if let errorMessage {
+                    ErrorBanner(message: errorMessage)
+                }
+
+                Spacer()
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 14)
 
             Button {
                 withAnimation(.snappy(duration: 0.25)) {
@@ -97,7 +103,9 @@ struct SettingsView: View {
                     )
             }
             .buttonStyle(.plain)
+            .padding(.horizontal, 20)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Logged Out View
