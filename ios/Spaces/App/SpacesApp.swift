@@ -39,30 +39,38 @@ struct RootView: View {
     @State private var didCheckInitialAuth = false
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            Theme.background.ignoresSafeArea()
-
-            Group {
-                switch selection {
-                case .lists:
-                    ListsView()
-                case .search:
-                    SearchView()
-                case .new:
-                    CaptureView()
-                case .notes:
-                    NotesListView()
-                case .settings:
-                    SettingsView()
+        TabView(selection: $selection) {
+            ListsView()
+                .tabItem {
+                    Label(Tab.lists.rawValue, systemImage: Tab.lists.icon)
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .tag(Tab.lists)
 
-            FloatingDock(selection: $selection)
-                .padding(.horizontal, 18)
-                .padding(.bottom, 6)
+            SearchView()
+                .tabItem {
+                    Label(Tab.search.rawValue, systemImage: Tab.search.icon)
+                }
+                .tag(Tab.search)
+
+            CaptureView()
+                .tabItem {
+                    Label(Tab.new.rawValue, systemImage: Tab.new.icon)
+                }
+                .tag(Tab.new)
+
+            NotesListView()
+                .tabItem {
+                    Label(Tab.notes.rawValue, systemImage: Tab.notes.icon)
+                }
+                .tag(Tab.notes)
+
+            SettingsView()
+                .tabItem {
+                    Label(Tab.settings.rawValue, systemImage: Tab.settings.icon)
+                }
+                .tag(Tab.settings)
         }
-        .background(Theme.background.ignoresSafeArea())
+        .tint(Theme.apricot)
         .onAppear {
             guard !didCheckInitialAuth else { return }
             didCheckInitialAuth = true
@@ -74,72 +82,6 @@ struct RootView: View {
             if !isLoggedIn {
                 selection = .settings
             }
-        }
-    }
-}
-
-/// Futuristic Floating Navigation Dock capsule using iOS native Liquid Glass.
-private struct FloatingDock: View {
-    @Binding var selection: RootView.Tab
-    @Namespace private var dockNamespace
-
-    var body: some View {
-        dockContent
-            .modifier(LiquidGlassDockModifier())
-    }
-
-    private var dockContent: some View {
-        HStack(spacing: 4) {
-            ForEach(RootView.Tab.allCases) { tab in
-                let isSelected = selection == tab
-                Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
-                        selection = tab
-                    }
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: tab.icon)
-                            .font(.system(size: 16, weight: isSelected ? .semibold : .regular))
-                        Text(tab.rawValue)
-                            .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
-                    }
-                    .foregroundStyle(isSelected ? Theme.apricot : Theme.textSecondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 9)
-                    .background {
-                        if isSelected {
-                            Capsule(style: .continuous)
-                                .fill(Theme.apricot.opacity(0.18))
-                                .overlay(
-                                    Capsule(style: .continuous)
-                                        .strokeBorder(Theme.apricot.opacity(0.35), lineWidth: 0.8)
-                                )
-                                .matchedGeometryEffect(id: "activeTab", in: dockNamespace)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 7)
-    }
-}
-
-private struct LiquidGlassDockModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content
-                .glassEffect(.regular.interactive(), in: .capsule)
-        } else {
-            content
-                .background(.ultraThinMaterial, in: Capsule(style: .continuous))
-                .overlay(
-                    Capsule(style: .continuous)
-                        .strokeBorder(.white.opacity(0.16), lineWidth: 0.75)
-                )
-                .shadow(color: .black.opacity(0.3), radius: 14, y: 6)
         }
     }
 }
