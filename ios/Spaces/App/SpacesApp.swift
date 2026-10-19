@@ -78,12 +78,17 @@ struct RootView: View {
     }
 }
 
-/// Futuristic Floating Navigation Dock capsule matching the 2026/2027 design specification.
+/// Futuristic Floating Navigation Dock capsule using iOS native Liquid Glass.
 private struct FloatingDock: View {
     @Binding var selection: RootView.Tab
     @Namespace private var dockNamespace
 
     var body: some View {
+        dockContent
+            .modifier(LiquidGlassDockModifier())
+    }
+
+    private var dockContent: some View {
         HStack(spacing: 4) {
             ForEach(RootView.Tab.allCases) { tab in
                 let isSelected = selection == tab
@@ -98,14 +103,17 @@ private struct FloatingDock: View {
                         Text(tab.rawValue)
                             .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
                     }
-                    .foregroundStyle(isSelected ? Theme.inkDark : Theme.textSecondary)
+                    .foregroundStyle(isSelected ? Theme.apricot : Theme.textSecondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
                     .background {
                         if isSelected {
                             Capsule(style: .continuous)
-                                .fill(Theme.activeDockGradient)
-                                .shadow(color: Theme.apricot.opacity(0.35), radius: 8, y: 2)
+                                .fill(Theme.apricot.opacity(0.18))
+                                .overlay(
+                                    Capsule(style: .continuous)
+                                        .strokeBorder(Theme.apricot.opacity(0.35), lineWidth: 0.8)
+                                )
                                 .matchedGeometryEffect(id: "activeTab", in: dockNamespace)
                         }
                     }
@@ -116,25 +124,22 @@ private struct FloatingDock: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
-        .background(
-            ZStack {
-                Capsule(style: .continuous)
-                    .fill(Theme.dock.opacity(0.95))
-                Capsule(style: .continuous)
-                    .fill(.ultraThinMaterial.opacity(0.25))
-            }
-        )
-        .overlay(
-            Capsule(style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [Theme.border.opacity(0.95), Theme.divider.opacity(0.5)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 1
+    }
+}
+
+private struct LiquidGlassDockModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            content
+                .background(.ultraThinMaterial, in: Capsule(style: .continuous))
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(.white.opacity(0.16), lineWidth: 0.75)
                 )
-        )
-        .shadow(color: .black.opacity(0.55), radius: 18, y: 8)
+                .shadow(color: .black.opacity(0.3), radius: 14, y: 6)
+        }
     }
 }

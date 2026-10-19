@@ -188,26 +188,36 @@ struct ListsView: View {
             } else {
                 ForEach(Array(model.lists.enumerated()), id: \.element.id) { index, list in
                     let items = model.inlineItems(for: list.id)
-                    if index == 0 && !items.isEmpty {
-                        ExpandedListCard(
-                            list: list,
-                            items: items,
-                            onToggle: { item in
-                                Task {
-                                    await model.toggleInlineItem(
-                                        item,
-                                        in: list.id,
-                                        api: settings.api,
-                                        isConfigured: settings.isConfigured
-                                    )
-                                }
-                            }
-                        )
-                    } else {
-                        NavigationLink(value: list) {
-                            CompactListCard(list: list)
+                    SwipeToDeleteContainer {
+                        Task {
+                            await model.delete(
+                                list,
+                                api: settings.api,
+                                isConfigured: settings.isConfigured
+                            )
                         }
-                        .buttonStyle(.plain)
+                    } content: {
+                        if index == 0 && !items.isEmpty {
+                            ExpandedListCard(
+                                list: list,
+                                items: items,
+                                onToggle: { item in
+                                    Task {
+                                        await model.toggleInlineItem(
+                                            item,
+                                            in: list.id,
+                                            api: settings.api,
+                                            isConfigured: settings.isConfigured
+                                        )
+                                    }
+                                }
+                            )
+                        } else {
+                            NavigationLink(value: list) {
+                                CompactListCard(list: list)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             }
@@ -404,6 +414,88 @@ private struct ExpandedListCard: View {
                 .strokeBorder(Theme.border, lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.3), radius: 12, y: 5)
+    }
+}
+
+// MARK: - Swipe To Delete Container
+
+private struct SwipeToDeleteContainer<Content: View>: View {
+    let onDelete: () -> Void
+    @ViewBuilder let content: () -> Content
+
+    @State private var offsetX: CGFloat = 0
+    @State private var isOpen = false
+    @State private var isDraggingHorizontally = false
+
+    private let revealWidth: CGFloat = 74
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            if offsetX < -2 || isOpen {
+                Button(role: .destructive) {
+                    withAnimation(.snappy(duration: 0.25)) {
+                        offsetX = 0
+                        isOpen = false
+                        onDelete()
+                    }
+                } label: {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(Theme.terracotta)
+                        Image(systemName: "trash.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Theme.inkDark)
+                    }
+                    .frame(width: 62)
+                    .padding(.vertical, 2)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Delete list")
+            }
+
+            content()
+                .disabled(isOpen || isDraggingHorizontally)
+                .overlay {
+                    if isOpen {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                                    offsetX = 0
+                                    isOpen = false
+                                }
+                            }
+                    }
+                }
+                .offset(x: offsetX)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 16, coordinateSpace: .local)
+                        .onChanged { value in
+                            if !isDraggingHorizontally {
+                                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                                isDraggingHorizontally = true
+                            }
+                            let base: CGFloat = isOpen ? -revealWidth : 0
+                            let proposed = base + value.translation.width
+                            offsetX = min(0, max(-revealWidth - 18, proposed))
+                        }
+                        .onEnded { value in
+                            defer { isDraggingHorizontally = false }
+                            guard isDraggingHorizontally || isOpen else { return }
+                            let base: CGFloat = isOpen ? -revealWidth : 0
+                            let projected = base + value.predictedEndTranslation.width
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                                if projected < -revealWidth * 0.45 || offsetX < -revealWidth * 0.45 {
+                                    offsetX = -revealWidth
+                                    isOpen = true
+                                } else {
+                                    offsetX = 0
+                                    isOpen = false
+                                }
+                            }
+                        }
+                )
+        }
     }
 }
 

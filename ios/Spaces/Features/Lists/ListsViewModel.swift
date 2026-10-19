@@ -175,12 +175,22 @@ final class ListsViewModel {
 
     func delete(_ list: ListSummary, api: APIClient, isConfigured: Bool = true) async {
         let snapshot = lists
+        let itemsSnapshot = itemsByList[list.id]
         lists.removeAll { $0.id == list.id }
+        itemsByList.removeValue(forKey: list.id)
         guard isConfigured, !list.id.hasPrefix("showcase-") else { return }
         do {
             try await api.deleteList(id: list.id)
+            if let first = lists.first, itemsByList[first.id] == nil {
+                if let firstItems = try? await api.listItems(listID: first.id) {
+                    itemsByList[first.id] = firstItems
+                }
+            }
         } catch {
             lists = snapshot
+            if let itemsSnapshot {
+                itemsByList[list.id] = itemsSnapshot
+            }
             if let message = userMessage(for: error) { errorMessage = message }
         }
     }

@@ -6,7 +6,11 @@ import Observation
 @MainActor
 @Observable
 final class AppSettings {
+    #if targetEnvironment(simulator)
     static let defaultBaseURL = "http://localhost:8000"
+    #else
+    static let defaultBaseURL = "http://10.0.0.161:8000"
+    #endif
     private static let baseURLKey = "serverBaseURL"
     private static let profileNameKey = "profileName"
     private static let profileEmailKey = "profileEmail"

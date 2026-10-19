@@ -94,7 +94,7 @@ enum Theme {
 
 // MARK: - Organic Checkboxes
 
-/// Circular organic checkbox with a warm terracotta partial ring when open, or taupe fill when checked.
+/// Checklist checkbox with a clean rounded-square border when open, or taupe fill with checkmark when checked.
 struct OrganicCheckbox: View {
     let checked: Bool
     var accentedRing: Bool = true
@@ -102,26 +102,19 @@ struct OrganicCheckbox: View {
     var body: some View {
         ZStack {
             if checked {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(Theme.taupe)
-                    .frame(width: 24, height: 24)
+                    .frame(width: 22, height: 22)
                 Image(systemName: "checkmark")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(Theme.inkDark)
             } else {
-                Circle()
-                    .strokeBorder(Theme.border, lineWidth: 1.5)
-                    .frame(width: 24, height: 24)
-                if accentedRing {
-                    Circle()
-                        .trim(from: 0.18, to: 0.82)
-                        .stroke(
-                            Theme.terracotta.opacity(0.85),
-                            style: StrokeStyle(lineWidth: 2, lineCap: .round)
-                        )
-                        .frame(width: 23, height: 23)
-                        .rotationEffect(.degrees(-35))
-                }
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(
+                        accentedRing ? Theme.terracotta.opacity(0.75) : Theme.border,
+                        lineWidth: 1.75
+                    )
+                    .frame(width: 22, height: 22)
             }
         }
         .animation(.snappy(duration: 0.2), value: checked)
