@@ -52,7 +52,7 @@ struct CaptureView: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
-                    .padding(.bottom, 195)
+                    .padding(.bottom, 110)
                     .animation(.snappy, value: model.lastResponse)
                 }
                 .scrollDismissesKeyboard(.interactively)
@@ -188,7 +188,7 @@ struct CaptureView: View {
             .accessibilityLabel(speech.isRecording ? "Stop dictation" : "Start dictation")
             Spacer()
         }
-        .padding(.bottom, 108)
+        .padding(.bottom, 18)
     }
 
     private func speechError(_ message: String) -> some View {
