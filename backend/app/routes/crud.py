@@ -218,6 +218,7 @@ class TodoPatch(BaseModel):
 @router.get("/todos")
 async def get_todos(
     date_: str | None = Query(None, alias="date"),
+    after: str | None = None,
     overdue_before: str | None = None,
     user_id: str = Depends(current_user_id),
     db=Depends(get_db),
@@ -225,10 +226,12 @@ async def get_todos(
     try:
         if date_:
             query: dict = {"user_id": user_id, "due_date": _check_date(date_)}
+        elif after:
+            query = {"user_id": user_id, "due_date": {"$gt": _check_date(after)}}
         elif overdue_before:
             query = {"user_id": user_id, "due_date": {"$lt": _check_date(overdue_before)}, "done": False}
         else:
-            raise HTTPException(422, "Provide ?date=YYYY-MM-DD or ?overdue_before=YYYY-MM-DD")
+            raise HTTPException(422, "Provide ?date=YYYY-MM-DD, ?after=YYYY-MM-DD, or ?overdue_before=YYYY-MM-DD")
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     docs = await db.todos.find(query).sort([("due_date", 1), ("done", 1), ("created_at", 1)]).to_list(length=None)

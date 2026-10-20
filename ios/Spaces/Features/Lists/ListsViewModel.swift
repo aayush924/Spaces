@@ -4,141 +4,21 @@ import Observation
 @MainActor
 @Observable
 final class ListsViewModel {
-    enum Segment: String, CaseIterable, Identifiable {
-        case today = "Today"
-        case tomorrow = "Tomorrow"
-        case lists = "Lists"
-        var id: String { rawValue }
-    }
-
-    var selectedSegment: Segment = .today
     private(set) var lists: [ListSummary] = []
-    private(set) var itemsByList: [String: [ListItem]] = [:]
-    private(set) var tomorrowTodos: [Todo] = []
-    private(set) var todayTodos: [Todo] = []
     private(set) var isLoading = false
     private(set) var hasLoaded = false
     var errorMessage: String?
-
-    func inlineItems(for listID: String) -> [ListItem] {
-        itemsByList[listID] ?? []
-    }
 
     func load(api: APIClient, isConfigured: Bool = true) async {
         guard isConfigured else { return }
         isLoading = true
         defer { isLoading = false }
         do {
-            async let fetchedListsTask = api.lists()
-            async let fetchedTomorrowTask = api.todos(date: LocalDate.tomorrow())
-            async let fetchedTodayTask = api.todos(date: LocalDate.today())
-            let (fetchedLists, fetchedTomorrow, fetchedToday) = try await (
-                fetchedListsTask,
-                fetchedTomorrowTask,
-                fetchedTodayTask
-            )
-            lists = fetchedLists
-            // Load items for the first list so its inline card checklist renders immediately.
-            if let first = fetchedLists.first {
-                if let firstItems = try? await api.listItems(listID: first.id) {
-                    itemsByList[first.id] = firstItems
-                }
-            }
-            tomorrowTodos = fetchedTomorrow
-            todayTodos = fetchedToday
+            lists = try await api.lists()
             hasLoaded = true
             errorMessage = nil
         } catch {
             if let message = userMessage(for: error) { errorMessage = message }
-        }
-    }
-
-    func toggleInlineItem(_ item: ListItem, in listID: String, api: APIClient, isConfigured: Bool = true) async {
-        guard var listItems = itemsByList[listID],
-              let index = listItems.firstIndex(where: { $0.id == item.id }) else { return }
-        listItems[index].done.toggle()
-        itemsByList[listID] = listItems
-        updateListCounts(for: listID)
-
-        guard isConfigured, !item.id.hasPrefix("showcase-") else { return }
-        do {
-            let updated = try await api.updateListItem(listID: listID, itemID: item.id, done: listItems[index].done)
-            if var current = itemsByList[listID], let i = current.firstIndex(where: { $0.id == updated.id }) {
-                current[i] = updated
-                itemsByList[listID] = current
-                updateListCounts(for: listID)
-            }
-        } catch {
-            if var current = itemsByList[listID], let i = current.firstIndex(where: { $0.id == item.id }) {
-                current[i].done = item.done
-                itemsByList[listID] = current
-                updateListCounts(for: listID)
-            }
-            if let message = userMessage(for: error) { errorMessage = message }
-        }
-    }
-
-    private func updateListCounts(for listID: String) {
-        guard let i = lists.firstIndex(where: { $0.id == listID }),
-              let items = itemsByList[listID] else { return }
-        lists[i].itemCount = items.count
-        lists[i].openCount = items.filter { !$0.done }.count
-    }
-
-    func toggleTodo(_ todo: Todo, isToday: Bool, api: APIClient, isConfigured: Bool = true) async {
-        if isToday {
-            if let idx = todayTodos.firstIndex(where: { $0.id == todo.id }) {
-                todayTodos[idx].done.toggle()
-            }
-        } else {
-            if let idx = tomorrowTodos.firstIndex(where: { $0.id == todo.id }) {
-                tomorrowTodos[idx].done.toggle()
-            }
-        }
-        guard isConfigured, !todo.id.hasPrefix("showcase-") else { return }
-        do {
-            let updated = try await api.updateTodo(id: todo.id, done: !todo.done)
-            if isToday, let idx = todayTodos.firstIndex(where: { $0.id == todo.id }) {
-                todayTodos[idx] = updated
-            } else if let idx = tomorrowTodos.firstIndex(where: { $0.id == todo.id }) {
-                tomorrowTodos[idx] = updated
-            }
-        } catch {
-            if let message = userMessage(for: error) { errorMessage = message }
-        }
-    }
-
-    func addQuickTodo(text: String, forToday: Bool, api: APIClient, isConfigured: Bool = true) async -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        let due = forToday ? LocalDate.today() : LocalDate.tomorrow()
-        if !isConfigured {
-            let newTodo = Todo(
-                id: "showcase-\(UUID().uuidString)",
-                text: trimmed,
-                dueDate: due,
-                done: false,
-                doneAt: nil,
-                createdAt: Date()
-            )
-            if forToday {
-                todayTodos.append(newTodo)
-            } else {
-                tomorrowTodos.append(newTodo)
-            }
-            return true
-        }
-        do {
-            let created = try await api.createTodo(text: trimmed, dueDate: due)
-            if forToday {
-                todayTodos.append(created)
-            } else {
-                tomorrowTodos.append(created)
-            }
-            return true
-        } catch {
-            if let message = userMessage(for: error) { errorMessage = message }
-            return false
         }
     }
 
@@ -156,7 +36,6 @@ final class ListsViewModel {
                 createdAt: Date()
             )
             lists.append(created)
-            itemsByList[created.id] = []
             return true
         }
         do {
@@ -175,22 +54,12 @@ final class ListsViewModel {
 
     func delete(_ list: ListSummary, api: APIClient, isConfigured: Bool = true) async {
         let snapshot = lists
-        let itemsSnapshot = itemsByList[list.id]
         lists.removeAll { $0.id == list.id }
-        itemsByList.removeValue(forKey: list.id)
         guard isConfigured, !list.id.hasPrefix("showcase-") else { return }
         do {
             try await api.deleteList(id: list.id)
-            if let first = lists.first, itemsByList[first.id] == nil {
-                if let firstItems = try? await api.listItems(listID: first.id) {
-                    itemsByList[first.id] = firstItems
-                }
-            }
         } catch {
             lists = snapshot
-            if let itemsSnapshot {
-                itemsByList[list.id] = itemsSnapshot
-            }
             if let message = userMessage(for: error) { errorMessage = message }
         }
     }

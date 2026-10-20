@@ -15,8 +15,8 @@ struct SpacesApp: App {
 
 struct RootView: View {
     enum Tab: String, CaseIterable, Hashable, Identifiable {
+        case todos = "Todos"
         case lists = "Lists"
-        case search = "Search"
         case new = "New"
         case notes = "Notes"
         case settings = "Profile"
@@ -25,8 +25,8 @@ struct RootView: View {
 
         var icon: String {
             switch self {
+            case .todos: return "checklist"
             case .lists: return "list.bullet"
-            case .search: return "magnifyingglass"
             case .new: return "square.and.pencil"
             case .notes: return "doc.text"
             case .settings: return "person.crop.circle"
@@ -35,22 +35,22 @@ struct RootView: View {
     }
 
     @Environment(AppSettings.self) private var settings
-    @State private var selection: Tab = .lists
+    @State private var selection: Tab = .todos
     @State private var didCheckInitialAuth = false
 
     var body: some View {
         TabView(selection: $selection) {
+            TodosView()
+                .tabItem {
+                    Label(Tab.todos.rawValue, systemImage: Tab.todos.icon)
+                }
+                .tag(Tab.todos)
+
             ListsView()
                 .tabItem {
                     Label(Tab.lists.rawValue, systemImage: Tab.lists.icon)
                 }
                 .tag(Tab.lists)
-
-            SearchView()
-                .tabItem {
-                    Label(Tab.search.rawValue, systemImage: Tab.search.icon)
-                }
-                .tag(Tab.search)
 
             CaptureView()
                 .tabItem {

@@ -4,20 +4,130 @@ import Observation
 @MainActor
 @Observable
 final class NotesListViewModel {
+    private static let recentSearchesKey = "recentSearches"
+    private static let maxRecentSearches = 5
+    private static let maxSearchResults = 15
+
     private(set) var notes: [Note] = []
+    private(set) var searchResults: [Note] = []
+    private(set) var recentSearches: [String]
     private(set) var isLoading = false
+    private(set) var isSearching = false
+    private(set) var hasSearched = false
     private(set) var hasLoadedLive = false
-    var filterText = ""
-    var showingFilter = false
+    var query = ""
+    var showingSearch = false
     var errorMessage: String?
 
-    var displayedNotes: [Note] {
-        let q = filterText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return notes }
-        return notes.filter {
-            $0.displayTitle.lowercased().contains(q)
-                || $0.text.lowercased().contains(q)
-                || $0.tags.contains(where: { $0.lowercased().contains(q) })
+    @ObservationIgnored private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        let stored = defaults.stringArray(forKey: Self.recentSearchesKey) ?? []
+        self.recentSearches = Array(stored.prefix(Self.maxRecentSearches))
+    }
+
+    var trimmedQuery: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func isExactMatch(_ note: Note, for lowerQuery: String) -> Bool {
+        guard !lowerQuery.isEmpty else { return false }
+        return note.displayTitle.lowercased().contains(lowerQuery)
+            || note.text.lowercased().contains(lowerQuery)
+            || note.tags.contains(where: { $0.lowercased().contains(lowerQuery) })
+    }
+
+    func recordRecentSearch(_ rawQuery: String) {
+        let trimmed = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        var updated = recentSearches
+        if let first = updated.first,
+           trimmed.lowercased().hasPrefix(first.lowercased()) || first.lowercased().hasPrefix(trimmed.lowercased()),
+           abs(trimmed.count - first.count) <= 6 {
+            updated.removeFirst()
+        }
+        updated.removeAll { $0.caseInsensitiveCompare(trimmed) == .orderedSame }
+        updated.insert(trimmed, at: 0)
+        if updated.count > Self.maxRecentSearches {
+            updated = Array(updated.prefix(Self.maxRecentSearches))
+        }
+        recentSearches = updated
+        defaults.set(updated, forKey: Self.recentSearchesKey)
+    }
+
+    func removeRecentSearch(_ item: String) {
+        recentSearches.removeAll { $0 == item }
+        defaults.set(recentSearches, forKey: Self.recentSearchesKey)
+    }
+
+    func debouncedSearch(api: APIClient, isConfigured: Bool) async {
+        guard showingSearch else { return }
+        let q = trimmedQuery
+        guard !q.isEmpty else {
+            searchResults = []
+            hasSearched = false
+            isSearching = false
+            errorMessage = nil
+            return
+        }
+        do {
+            try await Task.sleep(for: .milliseconds(300))
+        } catch {
+            return
+        }
+        await search(q, api: api, isConfigured: isConfigured)
+    }
+
+    func search(_ q: String, api: APIClient, isConfigured: Bool) async {
+        let lower = q.lowercased()
+        let localExact = notes.filter { isExactMatch($0, for: lower) }
+
+        if !isConfigured {
+            let showcaseSource = notes.isEmpty ? ShowcaseData.notes : notes
+            let exact = showcaseSource.filter { isExactMatch($0, for: lower) }
+            let exactIDs = Set(exact.map(\.id))
+            let related = showcaseSource.filter {
+                !exactIDs.contains($0.id) && (lower.contains("bike") && $0.tags.contains("garage"))
+            }
+            searchResults = Array((exact + related).prefix(Self.maxSearchResults))
+            hasSearched = true
+            errorMessage = nil
+            recordRecentSearch(q)
+            return
+        }
+
+        isSearching = true
+        defer { isSearching = false }
+        do {
+            let found = try await api.search(q, limit: Self.maxSearchResults)
+            guard !Task.isCancelled, q == trimmedQuery else { return }
+            let apiNotes = found.map(\.note)
+
+            // Combine exact matches first, then semantic/search findings, deduplicated and capped at 15.
+            var exactMatches: [Note] = []
+            var relatedMatches: [Note] = []
+            var seenIDs = Set<String>()
+
+            for note in apiNotes + localExact {
+                guard !seenIDs.contains(note.id) else { continue }
+                if isExactMatch(note, for: lower) {
+                    seenIDs.insert(note.id)
+                    exactMatches.append(note)
+                }
+            }
+            for note in apiNotes {
+                guard !seenIDs.contains(note.id) else { continue }
+                seenIDs.insert(note.id)
+                relatedMatches.append(note)
+            }
+
+            searchResults = Array((exactMatches + relatedMatches).prefix(Self.maxSearchResults))
+            hasSearched = true
+            errorMessage = nil
+            recordRecentSearch(q)
+        } catch {
+            if let message = userMessage(for: error) { errorMessage = message }
         }
     }
 
@@ -68,6 +178,7 @@ struct NotesListView: View {
     @Environment(AppSettings.self) private var settings
     @State private var model = NotesListViewModel()
     @State private var showingNewNote = false
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -75,46 +186,39 @@ struct NotesListView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     header
 
-                    if model.showingFilter {
-                        HStack(spacing: 10) {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundStyle(Theme.textTertiary)
-                            TextField("Filter notes or #tags…", text: $model.filterText)
-                                .foregroundStyle(Theme.textPrimary)
-                                .tint(Theme.apricot)
-                            if !model.filterText.isEmpty {
-                                Button {
-                                    model.filterText = ""
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(Theme.textTertiary)
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 11)
-                        .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(Theme.border, lineWidth: 1)
-                        )
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                    if model.showingSearch {
+                        searchBar
+                            .transition(.move(edge: .top).combined(with: .opacity))
                     }
 
                     if let error = model.errorMessage {
                         ErrorBanner(message: error) {
-                            Task { await model.load(api: settings.api, isConfigured: settings.isConfigured) }
+                            Task {
+                                if model.showingSearch && !model.trimmedQuery.isEmpty {
+                                    await model.search(
+                                        model.trimmedQuery,
+                                        api: settings.api,
+                                        isConfigured: settings.isConfigured
+                                    )
+                                } else {
+                                    await model.load(api: settings.api, isConfigured: settings.isConfigured)
+                                }
+                            }
                         }
                     }
 
-                    LazyVStack(spacing: 16) {
-                        ForEach(model.displayedNotes) { note in
-                            NavigationLink {
-                                NoteDetailView(note: note)
-                            } label: {
-                                NoteCardView(note: note)
+                    if model.showingSearch {
+                        searchContent
+                    } else {
+                        LazyVStack(spacing: 16) {
+                            ForEach(model.notes) { note in
+                                NavigationLink {
+                                    NoteDetailView(note: note)
+                                } label: {
+                                    NoteCardView(note: note)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -122,13 +226,25 @@ struct NotesListView: View {
                 .padding(.top, 12)
                 .padding(.bottom, 120)
             }
+            .scrollDismissesKeyboard(.interactively)
             .background(Theme.background.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .refreshable {
-                await model.load(api: settings.api, isConfigured: settings.isConfigured)
+                if model.showingSearch && !model.trimmedQuery.isEmpty {
+                    await model.search(
+                        model.trimmedQuery,
+                        api: settings.api,
+                        isConfigured: settings.isConfigured
+                    )
+                } else {
+                    await model.load(api: settings.api, isConfigured: settings.isConfigured)
+                }
             }
             .task(id: settings.baseURL + settings.token) {
                 await model.load(api: settings.api, isConfigured: settings.isConfigured)
+            }
+            .task(id: "\(model.showingSearch)|\(model.query)") {
+                await model.debouncedSearch(api: settings.api, isConfigured: settings.isConfigured)
             }
             .sheet(isPresented: $showingNewNote) {
                 NewNoteSheet { title, text, tags in
@@ -152,19 +268,157 @@ struct NotesListView: View {
             Spacer()
             Button {
                 withAnimation(.snappy) {
-                    model.showingFilter.toggle()
-                    if !model.showingFilter { model.filterText = "" }
+                    model.showingSearch.toggle()
+                    if model.showingSearch {
+                        searchFocused = true
+                    } else {
+                        model.query = ""
+                        searchFocused = false
+                    }
                 }
             } label: {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(model.showingFilter ? Theme.apricot : Theme.textSecondary)
+                    .foregroundStyle(model.showingSearch ? Theme.apricot : Theme.textSecondary)
                     .frame(width: 40, height: 40)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Filter notes")
+            .accessibilityLabel("Search notes")
         }
         .padding(.bottom, 4)
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(Theme.apricot)
+
+            TextField("Search by concept or phrase…", text: $model.query)
+                .font(.system(size: 17))
+                .foregroundStyle(Theme.textPrimary)
+                .tint(Theme.apricot)
+                .focused($searchFocused)
+                .submitLabel(.search)
+                .onSubmit {
+                    let q = model.trimmedQuery
+                    guard !q.isEmpty else { return }
+                    Task {
+                        await model.search(q, api: settings.api, isConfigured: settings.isConfigured)
+                    }
+                }
+
+            if !model.query.isEmpty {
+                Button {
+                    model.query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Theme.border, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private var searchContent: some View {
+        if model.trimmedQuery.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("RECENT SEARCHES")
+                    .font(.system(size: 12, weight: .semibold))
+                    .tracking(1.3)
+                    .foregroundStyle(Theme.textTertiary)
+                    .padding(.leading, 2)
+
+                if model.recentSearches.isEmpty {
+                    Text("No recent searches yet")
+                        .font(.system(size: 15))
+                        .foregroundStyle(Theme.textTertiary)
+                        .padding(.leading, 2)
+                        .padding(.top, 4)
+                } else {
+                    VStack(spacing: 10) {
+                        ForEach(model.recentSearches, id: \.self) { recent in
+                            HStack(spacing: 12) {
+                                Button {
+                                    model.query = recent
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "clock.arrow.circlepath")
+                                            .font(.system(size: 15, weight: .medium))
+                                            .foregroundStyle(Theme.textTertiary)
+                                        Text(recent)
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundStyle(Theme.textPrimary)
+                                            .lineLimit(1)
+                                        Spacer()
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    withAnimation(.snappy(duration: 0.2)) {
+                                        model.removeRecentSearch(recent)
+                                    }
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(Theme.textTertiary)
+                                        .padding(6)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .strokeBorder(Theme.border, lineWidth: 1)
+                            )
+                        }
+                    }
+                }
+            }
+        } else if model.isSearching && model.searchResults.isEmpty {
+            HStack {
+                Spacer()
+                ProgressView("Searching…")
+                    .tint(Theme.apricot)
+                    .foregroundStyle(Theme.textSecondary)
+                Spacer()
+            }
+            .padding(.vertical, 36)
+        } else if model.hasSearched && model.searchResults.isEmpty && !model.isSearching {
+            VStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .font(.largeTitle)
+                    .foregroundStyle(Theme.textTertiary)
+                Text("No matching notes for “\(model.trimmedQuery)”")
+                    .font(.headline)
+                    .foregroundStyle(Theme.textPrimary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 48)
+        } else {
+            LazyVStack(spacing: 16) {
+                ForEach(model.searchResults) { note in
+                    NavigationLink {
+                        NoteDetailView(note: note)
+                    } label: {
+                        NoteCardView(note: note)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
     }
 }
 

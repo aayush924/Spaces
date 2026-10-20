@@ -224,7 +224,7 @@ extension APIClient {
     }
 
     // Search
-    func search(_ query: String, limit: Int = 20) async throws -> [SearchResult] {
+    func search(_ query: String, limit: Int = 15) async throws -> [SearchResult] {
         try await request(.get, "/search", query: [
             URLQueryItem(name: "q", value: query),
             URLQueryItem(name: "limit", value: String(limit)),
@@ -298,6 +298,10 @@ extension APIClient {
     // Todos
     func todos(date: String) async throws -> [Todo] {
         try await request(.get, "/todos", query: [URLQueryItem(name: "date", value: date)])
+    }
+
+    func laterTodos(after date: String) async throws -> [Todo] {
+        try await request(.get, "/todos", query: [URLQueryItem(name: "after", value: date)])
     }
 
     func overdueTodos(before date: String) async throws -> [Todo] {
