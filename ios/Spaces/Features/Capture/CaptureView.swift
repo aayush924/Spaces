@@ -293,10 +293,9 @@ struct CaptureResultCard: View {
             // Glowing AI Result Card
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .center) {
-                    Text("A\\")
-                        .font(.system(size: 19, weight: .bold, design: .rounded))
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(Theme.apricot)
-                        .tracking(-0.5)
 
                     Spacer()
 
