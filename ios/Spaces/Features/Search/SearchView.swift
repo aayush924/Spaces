@@ -234,8 +234,8 @@ struct SearchView: View {
         if let answer = model.answer {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("A\\")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Theme.apricot)
                     Text("Synthesis")
                         .font(.system(size: 14, weight: .semibold))
