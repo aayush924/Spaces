@@ -225,12 +225,18 @@ def test_lists_and_items_crud(client):
 
 def test_todos_crud_and_overdue(client):
     yesterday = (TODAY - timedelta(days=1)).isoformat()
+    later_day = (TODAY + timedelta(days=3)).isoformat()
     t1 = client.post("/todos", json={"text": "old task", "due_date": yesterday}).json()
     client.post("/todos", json={"text": "today task", "due_date": TODAY.isoformat()})
+    client.post("/todos", json={"text": "tomorrow task", "due_date": TOMORROW})
+    client.post("/todos", json={"text": "future task", "due_date": later_day})
     overdue = client.get("/todos", params={"overdue_before": TODAY.isoformat()}).json()
     assert [t["text"] for t in overdue] == ["old task"]
+    later = client.get("/todos", params={"after": TODAY.isoformat()}).json()
+    assert [t["text"] for t in later] == ["tomorrow task", "future task"]
     t1 = client.patch(f"/todos/{t1['id']}", json={"done": True}).json()
     assert t1["done"] and t1["done_at"]
     assert client.get("/todos", params={"overdue_before": TODAY.isoformat()}).json() == []
     assert client.post("/todos", json={"text": "x", "due_date": "tomorrow"}).status_code == 422
     assert client.get("/todos").status_code == 422
+

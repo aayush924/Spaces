@@ -111,10 +111,18 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return dot / (na * nb)
 
 
+def _is_exact_match(doc: dict, phrase: str) -> bool:
+    if not phrase:
+        return False
+    haystack = f"{doc.get('title') or ''}\n{doc.get('text', '')}\n{' '.join(doc.get('tags', []))}".lower()
+    return phrase in haystack
+
+
 def _keyword_rank(q: str, docs: list[dict]) -> list[dict]:
     """Small BM25-ish scorer with an exact-phrase bonus."""
     q_tokens = _tokens(q)
-    if not q_tokens:
+    phrase = q.lower().strip()
+    if not q_tokens and not phrase:
         return []
     n = len(docs) or 1
     df = Counter()
@@ -124,7 +132,6 @@ def _keyword_rank(q: str, docs: list[dict]) -> list[dict]:
         doc_tokens.append(toks)
         df.update(set(toks))
     avg_len = sum(len(t) for t in doc_tokens) / n or 1.0
-    phrase = q.lower().strip()
     scored = []
     for d, toks in zip(docs, doc_tokens, strict=True):
         tf = Counter(toks)
@@ -133,7 +140,7 @@ def _keyword_rank(q: str, docs: list[dict]) -> list[dict]:
             if tf[t]:
                 idf = math.log(1 + (n - df[t] + 0.5) / (df[t] + 0.5))
                 score += idf * tf[t] * 2.2 / (tf[t] + 1.2 * (0.25 + 0.75 * len(toks) / avg_len))
-        if len(phrase) > 3 and phrase in f"{d.get('title') or ''} {d.get('text', '')}".lower():
+        if _is_exact_match(d, phrase):
             score += 5.0
         if score > 0:
             scored.append((score, d))
@@ -161,7 +168,27 @@ async def _fallback_search(db, q: str, qvec: list[float] | None, user_id: str) -
 # --------------------------------------------------------------------------- public API
 
 
-async def hybrid_search(db, q: str, limit: int = 20, user_id: str = "default") -> list[dict]:
+async def _atlas_exact(db, q: str, limit: int, user_id: str) -> list[dict]:
+    pattern = re.escape(q)
+    cursor = (
+        db.notes.find(
+            {
+                "user_id": user_id,
+                "$or": [
+                    {"title": {"$regex": pattern, "$options": "i"}},
+                    {"text": {"$regex": pattern, "$options": "i"}},
+                    {"tags": {"$regex": pattern, "$options": "i"}},
+                ],
+            },
+            {"embedding": 0},
+        )
+        .sort("created_at", -1)
+        .limit(limit)
+    )
+    return await cursor.to_list(length=None)
+
+
+async def hybrid_search(db, q: str, limit: int = 15, user_id: str = "default") -> list[dict]:
     s = get_settings()
     q = q.strip()
     if not q:
@@ -176,11 +203,14 @@ async def hybrid_search(db, q: str, limit: int = 20, user_id: str = "default") -
     txt_ranked: list[dict] = []
     if DB.atlas_search:
         try:
-            tasks = [_atlas_text(db, q, user_id)]
+            tasks = [_atlas_exact(db, q, limit, user_id), _atlas_text(db, q, user_id)]
             if qvec is not None:
                 tasks.insert(0, _atlas_vector(db, qvec, user_id))
             results = await asyncio.gather(*tasks)
-            txt_ranked = results[-1]
+            atlas_txt = results[-1]
+            exact_docs = results[-2]
+            seen_ids = {str(d["_id"]) for d in exact_docs}
+            txt_ranked = exact_docs + [d for d in atlas_txt if str(d["_id"]) not in seen_ids]
             vec_ranked = results[0] if qvec is not None else []
         except Exception as exc:  # noqa: BLE001 - e.g. index still building
             log.warning("Atlas search failed (%s); using in-process fallback", exc)
@@ -191,8 +221,12 @@ async def hybrid_search(db, q: str, limit: int = 20, user_id: str = "default") -
     fused = rrf_merge(
         [("semantic", vec_ranked, s.semantic_weight), ("keyword", txt_ranked, s.keyword_weight)], k=s.rrf_k
     )
+    phrase = q.lower()
+    exact = [d for d in fused if _is_exact_match(d, phrase)]
+    related = [d for d in fused if not _is_exact_match(d, phrase)]
+    ordered = (exact + related)[:limit]
     return [
-        {"note": note_out(d), "score": round(d["_score"], 5), "match": d["_match"]} for d in fused[:limit]
+        {"note": note_out(d), "score": round(d["_score"], 5), "match": d["_match"]} for d in ordered
     ]
 
 

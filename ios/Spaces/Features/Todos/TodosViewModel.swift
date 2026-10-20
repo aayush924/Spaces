@@ -4,45 +4,30 @@ import Observation
 @MainActor
 @Observable
 final class TodosViewModel {
-    enum Day: String, CaseIterable, Identifiable {
+    enum Segment: String, CaseIterable, Identifiable {
         case today = "Today"
-        case tomorrow = "Tomorrow"
-        case pick = "Pick date"
+        case later = "Later"
         var id: String { rawValue }
     }
 
-    var day: Day = .today
-    var pickedDate = Date()
-    var newTodoText = ""
-    private(set) var todos: [Todo] = []
-    private(set) var overdue: [Todo] = []
+    var selectedSegment: Segment = .today
+    private(set) var todayTodos: [Todo] = []
+    private(set) var laterTodos: [Todo] = []
     private(set) var isLoading = false
     private(set) var hasLoaded = false
     var errorMessage: String?
 
-    /// The selected calendar day as "YYYY-MM-DD" in the user's time zone.
-    func selectedDate(now: Date = Date()) -> String {
-        switch day {
-        case .today: return LocalDate.today(now: now)
-        case .tomorrow: return LocalDate.tomorrow(now: now)
-        case .pick: return LocalDate.string(from: pickedDate)
-        }
-    }
-
-    var openTodos: [Todo] { todos.filter { !$0.done } }
-    var doneTodos: [Todo] { todos.filter(\.done) }
-
-    func load(api: APIClient) async {
-        let date = selectedDate()
+    func load(api: APIClient, isConfigured: Bool = true) async {
+        guard isConfigured else { return }
         isLoading = true
         defer { isLoading = false }
+        let today = LocalDate.today()
         do {
-            async let dayTodos = api.todos(date: date)
-            async let overdueTodos = api.overdueTodos(before: LocalDate.today())
-            let (fetched, late) = try await (dayTodos, overdueTodos)
-            guard date == selectedDate() else { return } // user switched day mid-flight
-            todos = fetched
-            overdue = late
+            async let fetchedTodayTask = api.todos(date: today)
+            async let fetchedLaterTask = api.laterTodos(after: today)
+            let (fetchedToday, fetchedLater) = try await (fetchedTodayTask, fetchedLaterTask)
+            todayTodos = fetchedToday
+            laterTodos = fetchedLater
             hasLoaded = true
             errorMessage = nil
         } catch {
@@ -50,56 +35,68 @@ final class TodosViewModel {
         }
     }
 
-    func add(api: APIClient) async {
-        let text = newTodoText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        newTodoText = ""
+    func toggleTodo(_ todo: Todo, isToday: Bool, api: APIClient, isConfigured: Bool = true) async {
+        if isToday {
+            if let idx = todayTodos.firstIndex(where: { $0.id == todo.id }) {
+                todayTodos[idx].done.toggle()
+            }
+        } else {
+            if let idx = laterTodos.firstIndex(where: { $0.id == todo.id }) {
+                laterTodos[idx].done.toggle()
+            }
+        }
+        guard isConfigured, !todo.id.hasPrefix("showcase-") else { return }
         do {
-            let todo = try await api.createTodo(text: text, dueDate: selectedDate())
-            todos.append(todo)
+            let updated = try await api.updateTodo(id: todo.id, done: !todo.done)
+            if isToday, let idx = todayTodos.firstIndex(where: { $0.id == todo.id }) {
+                todayTodos[idx] = updated
+            } else if let idx = laterTodos.firstIndex(where: { $0.id == todo.id }) {
+                laterTodos[idx] = updated
+            }
         } catch {
-            newTodoText = text
+            if isToday, let idx = todayTodos.firstIndex(where: { $0.id == todo.id }) {
+                todayTodos[idx].done = todo.done
+            } else if let idx = laterTodos.firstIndex(where: { $0.id == todo.id }) {
+                laterTodos[idx].done = todo.done
+            }
             if let message = userMessage(for: error) { errorMessage = message }
         }
     }
 
-    func toggle(_ todo: Todo, api: APIClient) async {
-        let newValue = !todo.done
-        apply(id: todo.id) { $0.done = newValue } // optimistic
-        do {
-            let updated = try await api.updateTodo(id: todo.id, done: newValue)
-            apply(id: todo.id) { $0 = updated }
-        } catch {
-            apply(id: todo.id) { $0.done = todo.done }
-            if let message = userMessage(for: error) { errorMessage = message }
+    func addTodo(text: String, dueDate: String, api: APIClient, isConfigured: Bool = true) async -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let today = LocalDate.today()
+        let isToday = (dueDate == today)
+        if !isConfigured {
+            let newTodo = Todo(
+                id: "showcase-\(UUID().uuidString)",
+                text: trimmed,
+                dueDate: dueDate,
+                done: false,
+                doneAt: nil,
+                createdAt: Date()
+            )
+            if isToday {
+                todayTodos.append(newTodo)
+            } else {
+                laterTodos.append(newTodo)
+                laterTodos.sort { ($0.dueDate, $0.createdAt) < ($1.dueDate, $1.createdAt) }
+            }
+            return true
         }
-    }
-
-    /// Moves an overdue todo to today.
-    func moveToToday(_ todo: Todo, api: APIClient) async {
         do {
-            let updated = try await api.updateTodo(id: todo.id, dueDate: LocalDate.today())
-            overdue.removeAll { $0.id == todo.id }
-            if day == .today { todos.append(updated) }
+            let created = try await api.createTodo(text: trimmed, dueDate: dueDate)
+            if isToday {
+                todayTodos.append(created)
+            } else {
+                laterTodos.append(created)
+                laterTodos.sort { ($0.dueDate, $0.createdAt) < ($1.dueDate, $1.createdAt) }
+            }
+            return true
         } catch {
             if let message = userMessage(for: error) { errorMessage = message }
+            return false
         }
-    }
-
-    func delete(_ todo: Todo, api: APIClient) async {
-        let (savedTodos, savedOverdue) = (todos, overdue)
-        todos.removeAll { $0.id == todo.id }
-        overdue.removeAll { $0.id == todo.id }
-        do {
-            try await api.deleteTodo(id: todo.id)
-        } catch {
-            (todos, overdue) = (savedTodos, savedOverdue)
-            if let message = userMessage(for: error) { errorMessage = message }
-        }
-    }
-
-    private func apply(id: String, _ change: (inout Todo) -> Void) {
-        if let i = todos.firstIndex(where: { $0.id == id }) { change(&todos[i]) }
-        if let i = overdue.firstIndex(where: { $0.id == id }) { change(&overdue[i]) }
     }
 }
