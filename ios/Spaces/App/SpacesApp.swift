@@ -19,7 +19,7 @@ struct RootView: View {
         case lists = "Lists"
         case new = "New"
         case notes = "Notes"
-        case settings = "Profile"
+        case profile = "Profile"
 
         var id: String { rawValue }
 
@@ -29,7 +29,7 @@ struct RootView: View {
             case .lists: return "list.bullet"
             case .new: return "square.and.pencil"
             case .notes: return "doc.text"
-            case .settings: return "person.crop.circle"
+            case .profile: return "person.crop.circle"
             }
         }
     }
@@ -64,23 +64,23 @@ struct RootView: View {
                 }
                 .tag(Tab.notes)
 
-            SettingsView()
+            ProfileView()
                 .tabItem {
-                    Label(Tab.settings.rawValue, systemImage: Tab.settings.icon)
+                    Label(Tab.profile.rawValue, systemImage: Tab.profile.icon)
                 }
-                .tag(Tab.settings)
+                .tag(Tab.profile)
         }
         .tint(Theme.apricot)
         .onAppear {
             guard !didCheckInitialAuth else { return }
             didCheckInitialAuth = true
             if !settings.isConfigured {
-                selection = .settings
+                selection = .profile
             }
         }
         .onChange(of: settings.isConfigured) { _, isLoggedIn in
             if !isLoggedIn {
-                selection = .settings
+                selection = .profile
             }
         }
     }

@@ -20,6 +20,9 @@ targets:
   Spaces:
     type: application
     platform: iOS
+    configFiles:
+      Debug: Config.xcconfig
+      Release: Config.xcconfig
     sources:
       - path: Spaces
     settings:

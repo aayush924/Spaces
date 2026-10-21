@@ -13,5 +13,8 @@ DerivedData/
 xcuserdata/
 *.xcuserstate
 
-# macOS
+# macOS & Local Agent Rules
 .DS_Store
+.agents/
+ios/Local.xcconfig
+

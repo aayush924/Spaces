@@ -15,7 +15,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "4B0799066208D30230B8A8A2"
+               BlueprintIdentifier = "7A5A65F118782947D37F02F8"
                BuildableName = "Spaces.app"
                BlueprintName = "Spaces"
                ReferencedContainer = "container:Spaces.xcodeproj">
@@ -29,7 +29,7 @@
             buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "B8F48D520623ACC4855F2012"
+               BlueprintIdentifier = "32C987DFB19F4560243CA67E"
                BuildableName = "SpacesTests.xctest"
                BlueprintName = "SpacesTests"
                ReferencedContainer = "container:Spaces.xcodeproj">
@@ -46,7 +46,7 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "4B0799066208D30230B8A8A2"
+            BlueprintIdentifier = "7A5A65F118782947D37F02F8"
             BuildableName = "Spaces.app"
             BlueprintName = "Spaces"
             ReferencedContainer = "container:Spaces.xcodeproj">
@@ -58,7 +58,7 @@
             parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "B8F48D520623ACC4855F2012"
+               BlueprintIdentifier = "32C987DFB19F4560243CA67E"
                BuildableName = "SpacesTests.xctest"
                BlueprintName = "SpacesTests"
                ReferencedContainer = "container:Spaces.xcodeproj">
@@ -82,7 +82,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "4B0799066208D30230B8A8A2"
+            BlueprintIdentifier = "7A5A65F118782947D37F02F8"
             BuildableName = "Spaces.app"
             BlueprintName = "Spaces"
             ReferencedContainer = "container:Spaces.xcodeproj">
@@ -101,7 +101,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "4B0799066208D30230B8A8A2"
+            BlueprintIdentifier = "7A5A65F118782947D37F02F8"
             BuildableName = "Spaces.app"
             BlueprintName = "Spaces"
             ReferencedContainer = "container:Spaces.xcodeproj">

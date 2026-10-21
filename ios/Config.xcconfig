@@ -1,0 +1,2 @@
+// Optional local overrides (e.g. DEVELOPMENT_TEAM in Local.xcconfig, which is git-ignored)
+#include? "Local.xcconfig"

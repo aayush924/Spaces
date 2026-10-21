@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct SettingsView: View {
+struct ProfileView: View {
     @Environment(AppSettings.self) private var settings
 
     enum AuthMode {

@@ -136,14 +136,63 @@ Spaces/
 ├── ios/
 │   ├── Spaces/
 │   │   ├── App/               # SpacesApp root & floating glass navigation dock
-│   │   ├── Features/          # Capture, Lists, Todos, Notes, Search, and Settings screens + ViewModels
+│   │   ├── Features/          # Capture, Lists, Todos, Notes, and Profile screens + ViewModels
 │   │   ├── Networking/        # APIClient, Codable Models & ISO-8601 JSONCoding
 │   │   ├── Shared/            # Warm Dark Humanist Theme, custom components & organic checkboxes
 │   │   ├── Speech/            # On-device live SpeechRecognizer
 │   │   └── Storage/           # Keychain wrapper & observable AppSettings
 │   └── SpacesTests/           # Model decoding & mock URLProtocol networking unit tests
 └── docs/
-    ├── API.md                 # Full REST API contract & JSON schemas
-    ├── IMPLEMENTATION_PLAN.md # System design & architecture specifications
-    └── PROJECT_HISTORY.md     # Detailed engineering log & component documentation
+    └── API.md                 # Full REST API contract & JSON schemas
 ```
+
+---
+
+## Quickstart
+
+### Prerequisites
+- **Python 3.11+**
+- **Xcode 16+** (iOS 17+ Simulator or physical device)
+- **MongoDB Atlas** cluster (an M0 free tier cluster works out of the box)
+- **Google Gemini API Key** ([Google AI Studio](https://aistudio.google.com/apikey))
+
+### 1. Backend Setup
+```bash
+cd backend
+make install
+cp .env.example .env
+```
+
+Fill in `backend/.env` with your credentials:
+- `MONGODB_URI`: Your MongoDB Atlas connection string
+- `GEMINI_API_KEY`: Your Gemini API key
+- `API_TOKEN`: A shared secret token (generate one with `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`)
+
+Start the development server (automatically bootstraps collection and Atlas Search / Vector Search indexes on startup):
+```bash
+make dev
+# Server runs at http://localhost:8000 (interactive OpenAPI docs at http://localhost:8000/docs)
+```
+
+### 2. iOS App Setup
+1. Open the Xcode project:
+   ```bash
+   open ios/Spaces.xcodeproj
+   ```
+   *(Optional: if you modify `ios/project.yml`, regenerate the project with `cd ios && xcodegen generate`.)*
+2. Select an iOS Simulator (or your physical iPhone) and press **Run (`⌘R`)**.
+3. On first launch, the app navigates to the **Profile** tab where you can sign up or log in with your email/username and password.
+
+### 3. Running Tests
+```bash
+# Run offline backend unit & integration tests (uses in-memory mock DB + deterministic embeddings)
+cd backend && make test
+
+# Run live Gemini router golden-set benchmark (requires GEMINI_API_KEY in .env)
+cd backend && make test-live
+
+# Run iOS unit tests
+xcodebuild -project ios/Spaces.xcodeproj -scheme Spaces \
+  -destination 'platform=iOS Simulator,name=iPhone 16' test
+```
+
