@@ -140,6 +140,11 @@ def test_rule_fallback_when_ai_unavailable(client):
     assert out["actions"][0]["due_date"] == TOMORROW
     assert out["actions"][0]["items"] == ["gym", "email Raj"]
 
+    out = cap(client, "I have to solve the leetcode problems given by gemini")
+    assert out["actions"][0]["type"] == "todo_add"
+    assert out["actions"][0]["due_date"] == TOMORROW
+    assert out["actions"][0]["items"] == ["solve the leetcode problems given by gemini"]
+
     out = cap(client, "random musing about life")
     assert out["actions"][0]["type"] == "note"
 
@@ -150,6 +155,12 @@ def test_rule_route_unit():
     assert a.type == "list_add" and a.list_name == "Wish List"
     a = rule_route("add pick up dry cleaning to tomorrow", ctx)[0]
     assert a.type == "todo_add" and a.due_date == TOMORROW and a.items == ["pick up dry cleaning"]
+    a = rule_route("I have to solve the leetcode problems given by gemini", ctx)[0]
+    assert a.type == "todo_add" and a.due_date == TOMORROW and a.items == ["solve the leetcode problems given by gemini"]
+    a = rule_route("remind me to call the dentist", ctx)[0]
+    assert a.type == "todo_add" and a.due_date == TOMORROW and a.items == ["call the dentist"]
+    a = rule_route("todo call mom", ctx)[0]
+    assert a.type == "todo_add" and a.due_date == TODAY.isoformat() and a.items == ["call mom"]
 
 
 def test_reference_calendar_contains_tomorrow():
