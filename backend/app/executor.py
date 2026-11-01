@@ -123,7 +123,7 @@ class Executor:
         )
 
     async def todo_add(self, a: RoutedAction) -> dict:
-        due = a.due_date or self.ctx.today.isoformat()
+        due = a.due_date or (self.ctx.today + timedelta(days=1)).isoformat()
         for text in a.items:
             res = await self.db.todos.insert_one(
                 {

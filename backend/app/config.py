@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # Gemini
     gemini_api_key: str = ""
-    gemini_chat_model: str = "gemini-flash-latest"
+    gemini_chat_model: str = "gemini-3.5-flash"
     gemini_embed_model: str = "gemini-embedding-2"
     embed_dim: int = 768
 

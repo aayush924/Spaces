@@ -41,25 +41,30 @@ SYSTEM_PROMPT = """You are the intent router for a personal thought-journal app.
 Split the user's input into one or more ACTIONS. Output JSON only, matching the schema.
 
 Action types:
-- note: an idea, thought, reflection, observation, plan, or anything worth remembering.
+- note: an idea, thought, reflection, observation, or brainstorm worth remembering (not a personal task to do).
   Fill note_text (the user's wording, lightly cleaned of filler like "um", "note to self"), title, tags.
 - list_add: add items to a named list (shopping lists like Costco/Walmart, a wish list, or any other list).
   Fill list_name and items. If the list is new, also fill list_kind.
 - list_item_remove: remove/cross off items from a list ("got the eggs", "take milk off the costco list").
-- todo_add: tasks the user wants to do on a specific day ("tomorrow I need to…", "add X to tomorrow",
-  "on Friday call mom"). Fill due_date and items (one task per item).
+- todo_add: actionable tasks or obligations the user needs, has, or wants to do — either on a specific day
+  ("tomorrow I need to…", "add X to tomorrow", "on Friday call mom") or undated/for later
+  ("I have to…", "I need to…", "I should…", "I gotta…", "I must…", "remind me to…", "don't forget to…").
+  Fill due_date and items (one task per item, stripping leading obligation phrases like "I have to" or "remind me to").
 - todo_complete: the user says they finished tasks ("done with the dentist call"). Fill items and due_date if known.
 
 Rules:
 - Resolve every relative date using the REFERENCE CALENDAR. due_date must be YYYY-MM-DD.
-- "todo"/"to-do" with no day means today. "my list for tomorrow" means a todo on tomorrow's date.
+- Explicit "todo"/"to-do" with no day means today. "my list for tomorrow" means a todo on tomorrow's date.
+- Undated task/obligation statements ("I have to…", "I need to…", "I should…", "I gotta…", "I must…",
+  "remind me to…", "don't forget to…", or tasks with "later" and no specific date) MUST use todo_add with
+  tomorrow's date from the REFERENCE CALENDAR so they land in the user's "Later" todo list.
 - Split compound inputs: "add eggs to costco and I had an idea about X" -> list_add + note.
 - Split multiple items: "eggs, milk and paper towels" -> three items. Keep quantities in the item text ("2 gallons milk").
 - Prefer an EXISTING list name when the user's words refer to it ("costco list", "my wishlist" -> "Wish List").
-- "wish list"/"wishlist"/"I want" style requests -> list_add to "Wish List".
+- "wish list"/"wishlist"/"I want" style requests for products/items -> list_add to "Wish List".
 - If the input is only a bare item with no list or verb ("milk"), use list_add with your best-guess list
   and LOW confidence (<0.5).
-- Never drop content. When in doubt, make it a note.
+- Never drop content. When in doubt between a reflection/idea and a note, make it a note; when it is an actionable task the user says they have/need/should do, make it a todo_add.
 - confidence: 0.9+ when explicit, 0.6-0.8 when inferred, below 0.5 when guessing.
 """
 
@@ -72,6 +77,8 @@ Input: tomorrow I need to call the dentist and renew my registration
 Output: {"actions":[{"type":"todo_add","due_date":"2026-01-16","items":["call the dentist","renew registration"],"confidence":0.95}]}
 Input: also add pick up dry cleaning to tomorrow
 Output: {"actions":[{"type":"todo_add","due_date":"2026-01-16","items":["pick up dry cleaning"],"confidence":0.93}]}
+Input: I have to solve the leetcode problems given by gemini
+Output: {"actions":[{"type":"todo_add","due_date":"2026-01-16","items":["solve the leetcode problems given by gemini"],"confidence":0.93}]}
 Input: what if the garage had a pegboard wall so the bikes hang vertically
 Output: {"actions":[{"type":"note","note_text":"What if the garage had a pegboard wall so the bikes hang vertically","title":"Garage pegboard bike wall","tags":["garage","home","idea"],"confidence":0.95}]}
 Input: grab milk at walmart, and I had a thought: a plant watering app that uses photos
@@ -116,7 +123,7 @@ def _sanitize(a: RoutedAction, ctx: RouteContext) -> RoutedAction:
     a.items = [i.strip() for i in a.items if i.strip()]
     a.confidence = max(0.0, min(1.0, a.confidence))
     if a.type in ("todo_add",):
-        a.due_date = _valid_date(a.due_date, ctx) or ctx.today.isoformat()
+        a.due_date = _valid_date(a.due_date, ctx) or (ctx.today + timedelta(days=1)).isoformat()
     elif a.type == "todo_complete":
         a.due_date = _valid_date(a.due_date, ctx)
     if a.type == "note":
@@ -148,6 +155,17 @@ _TODO = re.compile(
     r"|(?P<day2>today|tomorrow)\s*(?:,|:|-)?\s*(?:i\s+(?:need|have|want)\s+to\s+|todo:?\s*)?(?P<b>.+?))\s*[.!]?\s*$",
     re.IGNORECASE,
 )
+_TODO_EXPLICIT = re.compile(
+    r"^\s*to-?do(?:\s*:\s*|\s+)(?P<body>.+?)\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
+_TODO_OBLIGATION = re.compile(
+    r"^\s*(?:i\s+(?:really\s+)?(?:have\s+to|need\s+to|should|must|gotta|ought\s+to)"
+    r"|(?:please\s+)?(?:remind\s+me\s+to|don'?t\s+forget\s+to|remember\s+to))\s+"
+    r"(?P<body>.+?)\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
+_TRAILING_DAY = re.compile(r"^(?P<body>.+?)\s+\b(?P<day>today|tomorrow|later)\s*$", re.IGNORECASE)
 
 
 def _split_items(s: str) -> list[str]:
@@ -170,4 +188,24 @@ def rule_route(text: str, ctx: RouteContext) -> list[RoutedAction]:
         if list_name.lower() in ("wish", "wishlist"):
             list_name = "Wish List"
         return [RoutedAction(type="list_add", list_name=list_name, items=_split_items(m.group("items")), confidence=0.7)]
+    m = _TODO_EXPLICIT.match(text)
+    if m:
+        body = m.group("body").strip()
+        td = _TRAILING_DAY.match(body)
+        if td:
+            body = td.group("body")
+            due = ctx.today if td.group("day").lower() == "today" else ctx.today + timedelta(days=1)
+        else:
+            due = ctx.today
+        return [RoutedAction(type="todo_add", items=_split_items(body), due_date=due.isoformat(), confidence=0.75)]
+    m = _TODO_OBLIGATION.match(text)
+    if m:
+        body = m.group("body").strip()
+        td = _TRAILING_DAY.match(body)
+        if td:
+            body = td.group("body")
+            due = ctx.today if td.group("day").lower() == "today" else ctx.today + timedelta(days=1)
+        else:
+            due = ctx.today + timedelta(days=1)
+        return [RoutedAction(type="todo_add", items=_split_items(body), due_date=due.isoformat(), confidence=0.75)]
     return [RoutedAction(type="note", note_text=text.strip(), title=None, tags=[], confidence=0.5)]

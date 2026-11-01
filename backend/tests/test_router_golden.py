@@ -34,6 +34,7 @@ GOLDEN = [
     ),
     ("add sunscreen to my target list", [("list_add", "Target", None, 1)]),
     ("todo call mom", [("todo_add", None, "2026-10-08", 1)]),
+    ("I have to solve the leetcode problems given by gemini", [("todo_add", None, "2026-10-09", 1)]),
 ]
 
 

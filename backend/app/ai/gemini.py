@@ -29,7 +29,13 @@ def _get_client() -> genai.Client:
     if not settings.gemini_api_key:
         raise AIUnavailable("GEMINI_API_KEY is not set")
     if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
+        _client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(
+                timeout=12_000,
+                retry_options=types.HttpRetryOptions(attempts=1),
+            ),
+        )
     return _client
 
 
