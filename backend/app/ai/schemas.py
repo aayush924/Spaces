@@ -25,12 +25,12 @@ class RoutedAction(BaseModel):
         default=None, description="For list ops on a NEW list: what kind of list it is."
     )
     # --- shared by list + todo ops
+    due_date: str | None = Field(
+        default=None, description="For todo ops: absolute date YYYY-MM-DD resolved from the reference calendar."
+    )
     items: list[str] = Field(
         default_factory=list,
         description="For list/todo ops: one entry per item or task, short, keeping the user's wording.",
-    )
-    due_date: str | None = Field(
-        default=None, description="For todo ops: absolute date YYYY-MM-DD resolved from the reference calendar."
     )
     confidence: float = Field(description="0-1 confidence that this action is what the user intended.")
 

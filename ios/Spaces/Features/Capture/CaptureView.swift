@@ -73,7 +73,6 @@ struct CaptureView: View {
                     Button("Send") { Task { await send() } }
                         .fontWeight(.semibold)
                         .foregroundStyle(Theme.apricot)
-                    Button("Done") { editorFocused = false }
                 }
             }
             .errorAlert($model.errorMessage)
@@ -295,13 +294,6 @@ struct CaptureResultCard: View {
         return response.summary.isEmpty ? "Note saved" : response.summary
     }
 
-    private var tagsToDisplay: [String] {
-        if let first = response.actions.first, !first.items.isEmpty {
-            return first.items
-        }
-        return ["garage", "idea"]
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             // Glowing AI Result Card
@@ -345,11 +337,6 @@ struct CaptureResultCard: View {
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
                         .strikethrough(undone)
-                }
-
-                if !tagsToDisplay.isEmpty {
-                    TagChips(tags: tagsToDisplay, style: .warmSolid)
-                        .opacity(undone ? 0.5 : 1)
                 }
 
                 if response.actions.count > 1 {

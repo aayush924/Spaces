@@ -141,6 +141,27 @@ final class CaptureViewModel {
                 suggestions: []
             )
         }
+        if lower.contains("have to ") || lower.contains("need to ") || lower.contains("should ")
+            || lower.contains("remind me") || lower.contains("todo") || lower.contains("tomorrow")
+            || lower.contains("today") {
+            let isToday = lower.contains("today") || (lower.hasPrefix("todo") && !lower.contains("tomorrow"))
+            let dueDate = isToday ? LocalDate.today() : LocalDate.tomorrow()
+            let dayLabel = isToday ? "Today" : "Tomorrow"
+            return CaptureResponse(
+                captureId: "showcase-\(UUID().uuidString)",
+                summary: "✓ 1 todo for \(dayLabel)",
+                actions: [
+                    ExecutedAction(
+                        type: .todoAdd,
+                        summary: "1 todo for \(dayLabel)",
+                        confidence: 0.95,
+                        dueDate: dueDate,
+                        items: [text]
+                    )
+                ],
+                suggestions: []
+            )
+        }
         return CaptureResponse(
             captureId: "showcase-\(UUID().uuidString)",
             summary: "✓ Note saved",
@@ -150,7 +171,7 @@ final class CaptureViewModel {
                     summary: "Note saved",
                     confidence: 0.95,
                     noteId: "showcase-note-1",
-                    items: ["thought", "idea"]
+                    items: []
                 )
             ],
             suggestions: []
