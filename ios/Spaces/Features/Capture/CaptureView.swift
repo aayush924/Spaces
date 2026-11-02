@@ -77,8 +77,7 @@ struct CaptureView: View {
             }
             .errorAlert($model.errorMessage)
             .onChange(of: speech.transcript) { _, newValue in
-                guard applyTranscript, !newValue.isEmpty else { return }
-                model.text = textBeforeDictation.isEmpty ? newValue : textBeforeDictation + " " + newValue
+                applyDictation(newValue)
             }
             .onDisappear { speech.stop() }
         }
@@ -92,7 +91,7 @@ struct CaptureView: View {
                 .font(Theme.serifTitle(32))
                 .foregroundStyle(Theme.textPrimary)
             Spacer()
-            if editorFocused && model.canSend {
+            if model.canSend || model.isSending {
                 Button {
                     Task { await send() }
                 } label: {
@@ -176,11 +175,18 @@ struct CaptureView: View {
                             radius: 12,
                             y: 4
                         )
-                    Image(systemName: speech.isRecording ? "stop.fill" : "mic.fill")
-                        .font(.system(size: 22, weight: .medium))
-                        .foregroundStyle(Theme.textPrimary)
-                        .symbolEffect(.pulse, isActive: speech.isRecording)
+                    if speech.status == .requestingPermission {
+                        ProgressView()
+                            .tint(Theme.textPrimary)
+                    } else {
+                        Image(systemName: speech.isRecording ? "stop.fill" : "mic.fill")
+                            .font(.system(size: 22, weight: .medium))
+                            .foregroundStyle(Theme.textPrimary)
+                            .symbolEffect(.pulse, isActive: speech.isRecording)
+                    }
                 }
+                .frame(width: 60, height: 60)
+                .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .disabled(speech.status == .requestingPermission)
@@ -188,6 +194,7 @@ struct CaptureView: View {
             Spacer()
         }
         .padding(.bottom, 18)
+        .zIndex(1)
     }
 
     private func speechError(_ message: String) -> some View {
@@ -245,6 +252,11 @@ struct CaptureView: View {
 
     // MARK: Actions
 
+    private func applyDictation(_ newValue: String) {
+        guard applyTranscript, !newValue.isEmpty else { return }
+        model.text = textBeforeDictation.isEmpty ? newValue : textBeforeDictation + " " + newValue
+    }
+
     private func toggleDictation() async {
         if speech.isRecording {
             speech.stop()
@@ -252,7 +264,9 @@ struct CaptureView: View {
             textBeforeDictation = model.text.trimmingCharacters(in: .whitespacesAndNewlines)
             applyTranscript = true
             editorFocused = false
-            await speech.start()
+            await speech.start { transcript in
+                applyDictation(transcript)
+            }
         }
     }
 
