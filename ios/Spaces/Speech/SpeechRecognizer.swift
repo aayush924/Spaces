@@ -30,22 +30,31 @@ final class SpeechRecognizer {
 
     @ObservationIgnored var onTranscript: ((String) -> Void)?
     @ObservationIgnored private var recognizer: SFSpeechRecognizer? =
-        SFSpeechRecognizer(locale: Locale.current)
-        ?? SFSpeechRecognizer()
+        SFSpeechRecognizer(locale: SpeechRecognizer.resolveLocale())
         ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+        ?? SFSpeechRecognizer()
     @ObservationIgnored private var audioEngine: AVAudioEngine?
     @ObservationIgnored private var request: SFSpeechAudioBufferRecognitionRequest?
     @ObservationIgnored private var task: SFSpeechRecognitionTask?
     @ObservationIgnored private var sessionID = 0
+
+    private static let audioQueue = DispatchQueue(label: "com.aayushparikh.spaces.speech-audio", qos: .userInitiated)
+
+    nonisolated private static func resolveLocale() -> Locale {
+        if let preferred = Locale.preferredLanguages.first, !preferred.isEmpty {
+            return Locale(identifier: preferred)
+        }
+        return Locale(identifier: "en-US")
+    }
 
     private func resolveRecognizer() -> SFSpeechRecognizer? {
         if let recognizer, recognizer.isAvailable {
             return recognizer
         }
         let candidates: [SFSpeechRecognizer?] = [
-            SFSpeechRecognizer(locale: Locale.current),
-            SFSpeechRecognizer(),
-            SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+            SFSpeechRecognizer(locale: Self.resolveLocale()),
+            SFSpeechRecognizer(locale: Locale(identifier: "en-US")),
+            SFSpeechRecognizer()
         ]
         if let available = candidates.compactMap({ $0 }).first(where: { $0.isAvailable }) {
             self.recognizer = available
@@ -88,7 +97,7 @@ final class SpeechRecognizer {
         guard status == .requestingPermission else { return }
 
         do {
-            try beginSession(with: recognizer)
+            try await beginSession(with: recognizer)
         } catch {
             teardownAudio(deactivateSession: true)
             fail("Couldn’t start recording: \(error.localizedDescription)")
@@ -100,17 +109,17 @@ final class SpeechRecognizer {
         status = .idle
         teardownAudio(deactivateSession: false)
         request?.endAudio()
-        task?.finish() // lets the recognizer deliver a final result
 
         let finishingSession = sessionID
         Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(3))
+            try? await Task.sleep(for: .seconds(4))
             guard let self, self.sessionID == finishingSession, self.status == .idle else { return }
             if self.task != nil || self.request != nil {
+                self.task?.finish()
                 self.task?.cancel()
                 self.task = nil
                 self.request = nil
-                try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                Self.deactivateAudioSessionAsync()
             }
         }
     }
@@ -123,34 +132,19 @@ final class SpeechRecognizer {
         status = .idle
     }
 
-    private func beginSession(with recognizer: SFSpeechRecognizer) throws {
+    private func beginSession(with recognizer: SFSpeechRecognizer) async throws {
         // Clean up any lingering task or audio tap from a prior session.
         task?.cancel()
         task = nil
         request = nil
         teardownAudio(deactivateSession: false)
 
-        let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
-        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         request.addsPunctuation = true
-        // Note: Do not set `request.requiresOnDeviceRecognition = true`.
-        // `supportsOnDeviceRecognition` can be true even when offline dictation assets
-        // are not downloaded (or in Simulator), which causes recognitionTask to fail
-        // immediately. Leaving it false allows iOS to use on-device recognition when
-        // available and fall back to server recognition otherwise.
-
-        let engine = AVAudioEngine()
-        let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0 else { throw SpeechError.noInput }
 
         sessionID += 1
         let session = sessionID
-        self.audioEngine = engine
         self.request = request
         self.status = .recording
 
@@ -160,9 +154,38 @@ final class SpeechRecognizer {
             }
         }
 
-        Self.installTap(on: input, format: format, request: request)
-        engine.prepare()
-        try engine.start()
+        // Activate AVAudioSession and start AVAudioEngine on a background queue so
+        // AVAudioSession_iOS.mm never blocks or warns on the main thread.
+        let engine = try await Self.startAudioEngineOffMain(request: request)
+        self.audioEngine = engine
+    }
+
+    nonisolated private static func startAudioEngineOffMain(
+        request: SFSpeechAudioBufferRecognitionRequest
+    ) async throws -> AVAudioEngine {
+        try await withCheckedThrowingContinuation { continuation in
+            audioQueue.async {
+                do {
+                    let audioSession = AVAudioSession.sharedInstance()
+                    try audioSession.setCategory(.record, mode: .default, options: [])
+                    try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+
+                    let engine = AVAudioEngine()
+                    let input = engine.inputNode
+                    let format = input.outputFormat(forBus: 0)
+                    guard format.sampleRate > 0, format.channelCount > 0 else {
+                        throw SpeechError.noInput
+                    }
+
+                    installTap(on: input, format: format, request: request)
+                    engine.prepare()
+                    try engine.start()
+                    continuation.resume(returning: engine)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 
     private func handleResult(session: Int, text: String?, isFinal: Bool, error: Error?) {
@@ -175,7 +198,7 @@ final class SpeechRecognizer {
             if status == .recording {
                 stop()
             } else {
-                try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                Self.deactivateAudioSessionAsync()
             }
             if let error, transcript.isEmpty, !Self.isExplicitCancellation(error) {
                 errorMessage = "Couldn’t recognize speech: \(error.localizedDescription)"
@@ -192,12 +215,25 @@ final class SpeechRecognizer {
     }
 
     private func teardownAudio(deactivateSession: Bool) {
-        if let engine = audioEngine {
-            engine.stop()
-            engine.inputNode.removeTap(onBus: 0)
-        }
+        let engine = audioEngine
         audioEngine = nil
-        if deactivateSession {
+        Self.stopAudioEngineOffMain(engine: engine, deactivateSession: deactivateSession)
+    }
+
+    nonisolated private static func stopAudioEngineOffMain(engine: AVAudioEngine?, deactivateSession: Bool) {
+        audioQueue.async {
+            if let engine {
+                engine.stop()
+                engine.inputNode.removeTap(onBus: 0)
+            }
+            if deactivateSession {
+                try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            }
+        }
+    }
+
+    nonisolated private static func deactivateAudioSessionAsync() {
+        audioQueue.async {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
@@ -237,14 +273,19 @@ final class SpeechRecognizer {
     }
 
     nonisolated private static func requestMicrophonePermission() async -> Bool {
-        if #available(iOS 17.0, *) {
-            return await AVAudioApplication.requestRecordPermission()
-        } else {
+        switch AVAudioSession.sharedInstance().recordPermission {
+        case .granted:
+            return true
+        case .denied:
+            return false
+        case .undetermined:
             return await withCheckedContinuation { continuation in
                 AVAudioSession.sharedInstance().requestRecordPermission { allowed in
                     continuation.resume(returning: allowed)
                 }
             }
+        @unknown default:
+            return await AVAudioApplication.requestRecordPermission()
         }
     }
 }
